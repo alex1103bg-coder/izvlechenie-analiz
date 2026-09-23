@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Анализ на банково извлечение</title>
+<style>
+  :root{
+    color-scheme: light;
+    --bg:#f6f7f9; --panel:#fff; --surface-1:#fcfcfb;
+    --text-primary:#0b0b0b; --text-secondary:#52514e; --muted:#6b7480;
+    --line:#e3e6ea; --grid:#eceef1;
+    --accent:#2a78d6; --accent-soft:#eaf0fe;
+    --series-1:#2a78d6;
+    --good:#0ca30c; --critical:#d03b3b; --warning:#fab219;
+    --err-soft:#fdeceb;
+    --radius:10px;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      color-scheme: dark;
+      --bg:#131316; --panel:#1c1c1e; --surface-1:#1a1a19;
+      --text-primary:#fff; --text-secondary:#c3c2b7; --muted:#9aa3ae;
+      --line:#2b313a; --grid:#26262a;
+      --accent:#3987e5; --accent-soft:#1e2738;
+      --series-1:#3987e5;
+      --good:#0ca30c; --critical:#d03b3b; --warning:#fab219;
+      --err-soft:#3a2224;
+    }
+  }
+  :root[data-theme="dark"]{
+    color-scheme: dark;
+    --bg:#131316; --panel:#1c1c1e; --surface-1:#1a1a19;
+    --text-primary:#fff; --text-secondary:#c3c2b7; --muted:#9aa3ae;
+    --line:#2b313a; --grid:#26262a;
+    --accent:#3987e5; --accent-soft:#1e2738;
+    --series-1:#3987e5;
+    --err-soft:#3a2224;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--text-primary);
+    font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+    padding:24px 16px 60px;
+  }
+  .wrap{max-width:1140px;margin:0 auto}
+  h1{font-size:22px;margin:0 0 4px}
+  h2{font-size:16px;margin:0 0 14px}
+  .sub{color:var(--text-secondary);margin:0 0 24px;font-size:14px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-bottom:16px}
+  label{display:block;font-size:13px;font-weight:600;margin-bottom:6px}
+  .hint{font-size:12.5px;color:var(--muted);margin-top:6px}
+  input[type=password],select{
+    width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:8px;
+    background:var(--bg);color:var(--text-primary);font-size:14px;font-family:inherit;
+  }
+  input:focus,select:focus{outline:2px solid var(--accent);outline-offset:-1px}
+  .row{display:flex;gap:12px;flex-wrap:wrap}
+  .row>div{flex:1;min-width:220px}
+  button{
+    font:inherit;font-weight:600;padding:9px 16px;border-radius:8px;
+    border:1px solid var(--line);background:var(--panel);color:var(--text-primary);cursor:pointer;
+  }
+  button:hover:not(:disabled){border-color:var(--accent)}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  #drop{
+    border:2px dashed var(--line);border-radius:var(--radius);padding:34px 16px;
+    text-align:center;cursor:pointer;transition:.15s;background:var(--panel);
+  }
+  #drop:hover,#drop.over{border-color:var(--accent);background:var(--accent-soft)}
+  #drop strong{display:block;font-size:15px;margin-bottom:4px}
+  .bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:14px}
+
+  /* ---- обобщение ---- */
+  .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:20px}
+  .tile{background:var(--surface-1);border:1px solid var(--line);border-radius:8px;padding:13px 15px}
+  .tile .k{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;font-weight:600}
+  .tile .v{font-size:21px;font-weight:700;margin-top:5px;font-variant-numeric:tabular-nums}
+  .tile .v.pos{color:var(--good)} .tile .v.neg{color:var(--critical)}
+
+  /* ---- графика ---- */
+  .chart{margin-top:4px}
+  .crow{display:grid;grid-template-columns:190px 1fr 108px;gap:12px;align-items:center;margin-bottom:6px}
+  .clabel{font-size:13px;color:var(--text-secondary);text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ctrack{position:relative;height:22px;background:linear-gradient(to right,var(--grid) 1px,transparent 1px) 0 0/25% 100%}
+  .cfill{
+    height:22px;background:var(--series-1);border-radius:0 4px 4px 0;
+    box-shadow:0 0 0 2px var(--panel);transition:filter .12s;
+  }
+  .crow:hover .cfill{filter:brightness(1.12)}
+  .cval{font-size:13px;font-variant-numeric:tabular-nums;color:var(--text-primary);font-weight:600}
+  .cpct{font-size:11.5px;color:var(--muted);font-weight:400}
+
+  /* ---- таблица ---- */
+  .tablewrap{overflow-x:auto;margin-top:6px}
+  table{width:100%;border-collapse:collapse;font-size:13.5px;min-width:820px}
+  th,td{padding:8px 10px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-size:12px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);font-weight:600;white-space:nowrap}
+  td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  td.in{color:var(--good);font-weight:600}
+  tr.unk{background:var(--err-soft)}
+  .src{font-size:11px;color:var(--muted);display:block;margin-top:2px}
+  select.cat{padding:4px 6px;font-size:13px;border-radius:6px;border:1px solid var(--line);background:var(--bg);color:var(--text-primary);max-width:190px}
+  tfoot td{font-weight:700;border-top:2px solid var(--line);border-bottom:none}
+  .empty{text-align:center;color:var(--muted);padding:30px 0;font-size:14px}
+  .note{font-size:12.5px;color:var(--muted);border-left:3px solid var(--line);padding-left:10px;margin-top:12px}
+  .banner{background:var(--accent-soft);border:1px solid var(--accent);border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:14px}
+  .warn{background:var(--err-soft);border:1px solid var(--critical);border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:14px}
+  details{margin-top:10px}
+  summary{cursor:pointer;font-size:13px;color:var(--accent);font-weight:600}
+  pre{white-space:pre-wrap;font-size:12px;color:var(--muted)}
+  .tog{position:fixed;top:14px;right:14px;padding:6px 12px;font-size:12.5px;z-index:10}
+</style>
+</head>
+<body>
+<button class="tog" id="theme">Тъмна / светла</button>
+<div class="wrap">
+
+  <h1>Анализ на банково извлечение</h1>
+  <p class="sub">Качваш CSV от банката. Транзакциите се разпределят по счетоводни категории — първо по правила, после с AI за останалите. Резултатът е обобщение и CSV.</p>
+
+  <div class="panel">
+    <div class="row">
+      <div>
+        <label for="key">Gemini API ключ</label>
+        <input type="password" id="key" placeholder="AQ.… или AIza…" autocomplete="off">
+        <p class="hint">Безплатен от <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com</a>. Стои само в твоя браузър и се праща единствено към Google. Нужен е само ако правилата не покрият всичко.</p>
+      </div>
+      <div style="max-width:280px">
+        <label for="model">Модел</label>
+        <select id="model"><option value="">— сложи ключ —</option></select>
+        <p class="hint" id="modelhint">Списъкът се тегли от Google, за да не се чупи при спиране на стар модел.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div id="drop" tabindex="0" role="button" aria-label="Качи извлечение">
+      <strong>Пусни CSV тук или щракни</strong>
+      <span class="hint">експорт от банката · разделител „;“ или „,“</span>
+    </div>
+    <input type="file" id="file" accept=".csv,.txt,text/csv" hidden>
+    <div class="bar">
+      <button class="primary" id="run" disabled>Категоризирай</button>
+      <button id="demo">Демо без ключ</button>
+      <button id="reset" disabled>Изчисти</button>
+      <span class="hint" id="status"></span>
+    </div>
+    <p class="hint" style="margin-top:10px">Нямаш ключ или CSV? „Демо без ключ“ зарежда примерно извлечение на измислена фирма.</p>
+  </div>
+
+  <div class="panel" id="results" hidden>
+    <div id="banner" class="banner" hidden></div>
+    <div id="balwarn" class="warn" hidden></div>
+
+    <div class="tiles" id="tiles"></div>
+
+    <h2>Разходи по категории</h2>
+    <div class="chart" id="chart"></div>
+
+    <h2 style="margin-top:26px">Транзакции</h2>
+    <div class="tablewrap">
+      <table>
+        <thead><tr>
+          <th>Дата</th><th>Описание</th><th>Контрагент</th>
+          <th class="num">Сума</th><th>Категория</th>
+        </tr></thead>
+        <tbody id="rows"></tbody>
+        <tfoot id="foot"></tfoot>
+      </table>
+    </div>
+
+    <div class="bar">
+      <button id="csv">Свали CSV</button>
+      <button id="rules">Виж научените правила</button>
+    </div>
+    <p class="note">Смениш ли категория, контрагентът се запомня и следващия път се разпознава без AI. Редовете без категория са маркирани.</p>
+    <details>
+      <summary>Виж prompt-а, който се праща към модела</summary>
+      <pre id="promptview"></pre>
+    </details>
+  </div>
+
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const ls = {
+  get(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } },
+  set(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
+};
+
+/* ============================ КАТЕГОРИИ ============================ */
+const CATS = [
+  'Приходи от продажби',
+  'Доставчици',
+  'Наем',
+  'Заплати',
+  'Данъци и осигуровки',
+  'Комунални разходи',
+  'Банкови такси',
+  'Транспорт и гориво',
+  'Маркетинг и реклама',
+  'Оборудване и ремонт',
+  'Външни услуги',
+  'Друго'
+];
+
+/* Базови правила по ключови думи. Целта е AI да се вика възможно най-рядко:
+   всяка заявка струва време и пари, а правилото е мигновено и повтаряемо. */
+const BASE_RULES = [
+  [/инкасо|оборот каса|ポ|pos оборот/i,                'Приходи от продажби'],
+  [/наем/i,                                           'Наем'],
+  [/работна заплата|заплата м\.|възнаграждение/i,      'Заплати'],
+  [/нап|осигурит|здравни вноски|ддс за внасяне|дод|данък/i, 'Данъци и осигуровки'],
+  [/ел\. ?енергия|електро|електроразпр|ток\b/i,        'Комунални разходи'],
+  [/софийска вода|водоснабд|вик\b|топлофикация/i,      'Комунални разходи'],
+  [/интернет|телефон|мобилн|а1 българия|виваком|йеттел/i,'Комунални разходи'],
+  [/такса.*(обслужван|превод|pos|сметка)|банкова такса/i,'Банкови такси'],
+  [/гориво|бензин|дизел|лукойл|шел|омв|петрол/i,       'Транспорт и гориво'],
+  [/реклама|маркетинг|facebook|meta platforms|google ads/i,'Маркетинг и реклама'],
+  // „сервиз“ само по себе си лови и доставчици с такова име в имената си
+  // (напр. „МЕТРО ПАК СЕРВИЗ“ е опаковки, не ремонт) — затова е стеснено.
+  [/ремонт|техномаркет|техно ?сервиз|оборудване|блендер|кафемашин/i,'Оборудване и ремонт'],
+  [/счетоводн|юридическ|консултант|одит/i,             'Външни услуги']
+];
+
+function learned(){
+  try{ return JSON.parse(ls.get('bank_rules') || '{}'); }catch(e){ return {}; }
+}
+function learn(counterparty, cat){
+  const k = normKey(counterparty);
+  if(!k) return;
+  const r = learned(); r[k] = cat;
+  ls.set('bank_rules', JSON.stringify(r));
+}
+const normKey = s => (s || '').toLowerCase().replace(/[^\p{L}\p{N} ]/gu,'').replace(/\s+/g,' ').trim();
+
+/* Връща [категория, източник] или [null, null] */
+function byRules(tx){
+  const l = learned();
+  const k = normKey(tx.counterparty);
+  if(k && l[k]) return [l[k], 'научено правило'];
+  const hay = `${tx.desc} ${tx.counterparty}`;
+  for(const [re, cat] of BASE_RULES){
+    if(re.test(hay)) return [cat, 'правило'];
+  }
+  return [null, null];
+}
+
+/* ============================ CSV ЧЕТЕНЕ ============================ */
+/* Банките изнасят ту с „;“, ту с „,“, ту с табулация; сумите са ту с точка,
+   ту със запетая, а понякога са в две колони (дебит/кредит). Затова всичко
+   се разпознава, вместо да се очаква един формат. */
+
+function sniffDelim(text){
+  const line = text.split(/\r?\n/).find(l => l.trim()) || '';
+  const counts = { ';': 0, ',': 0, '\t': 0 };
+  let q = false;
+  for(const ch of line){
+    if(ch === '"') q = !q;
+    else if(!q && ch in counts) counts[ch]++;
+  }
+  return Object.entries(counts).sort((a,b) => b[1]-a[1])[0][0] || ';';
+}
+
+function parseCSV(text, delim){
+  const rows = []; let row = [], cell = '', q = false;
+  text = text.replace(/^﻿/, '');
+  for(let i = 0; i < text.length; i++){
+    const c = text[i];
+    if(q){
+      if(c === '"'){ if(text[i+1] === '"'){ cell += '"'; i++; } else q = false; }
+      else cell += c;
+    } else if(c === '"'){ q = true; }
+    else if(c === delim){ row.push(cell); cell = ''; }
+    else if(c === '\n'){ row.push(cell); rows.push(row); row = []; cell = ''; }
+    else if(c !== '\r'){ cell += c; }
+  }
+  if(cell || row.length){ row.push(cell); rows.push(row); }
+  return rows.filter(r => r.some(c => c.trim()));
+}
+
+function amount(v){
+  if(v == null) return null;
+  let s = String(v).trim().replace(/\s| /g,'').replace(/(EUR|BGN|лв\.?|€)/gi,'');
+  if(!s) return null;
+  // 1.234,56 → 1234.56 ; 1,234.56 → 1234.56 ; 1234,56 → 1234.56
+  if(/,\d{1,2}$/.test(s)) s = s.replace(/\./g,'').replace(',','.');
+  else s = s.replace(/,/g,'');
+  const n = parseFloat(s);
+  return Number.isFinite(n) ? n : null;
+}
+
+const find = (head, ...pats) =>
+  head.findIndex(h => pats.some(p => p.test(h)));
+
+function toTransactions(rows){
+  const head = rows[0].map(h => h.trim().toLowerCase());
+  const body = rows.slice(1);
+
+  const iDate  = find(head, /^дата|date|вальор|value/);
+  const iDesc  = find(head, /опис|основан|назначен|narrative|description|детайл/);
+  const iParty = find(head, /контрагент|наредител|получател|payee|counterpart|бенефиц/);
+  const iDebit = find(head, /дебит|debit|разход|изходящ/);
+  const iCred  = find(head, /кредит|credit|приход|входящ/);
+  const iAmt   = find(head, /^сума|amount|стойност/);
+
+  if(iDate < 0) throw new Error('не намирам колона с дата');
+  if(iDebit < 0 && iCred < 0 && iAmt < 0) throw new Error('не намирам колона със сума');
+
+  return body.map((r, i) => {
+    let amt = null;
+    if(iAmt >= 0) amt = amount(r[iAmt]);
+    else {
+      const d = iDebit >= 0 ? amount(r[iDebit]) : null;
+      const c = iCred  >= 0 ? amount(r[iCred])  : null;
+      if(c != null) amt = Math.abs(c);
+      else if(d != null) amt = -Math.abs(d);
+    }
+    return {
+      id: i,
+      date: (r[iDate] || '').trim(),
+      desc: (iDesc  >= 0 ? r[iDesc]  : '').trim(),
+      counterparty: (iParty >= 0 ? r[iParty] : '').trim(),
+      amount: amt,
+      cat: null,
+      src: null
+    };
+  }).filter(t => t.amount != null);
+}
+
+/* ============================ AI ============================ */
+const PROMPT = `Класифицирай банкови транзакции на българска фирма (кафене) по счетоводни категории.
+
+Разрешени категории — използвай ТОЧНО тези изписвания:
+${CATS.map(c => '- ' + c).join('\n')}
+
+Правила:
+- Положителна сума = входящо плащане, отрицателна = изходящо. Съобрази го.
+- Ако не си сигурен, върни "Друго". НЕ измисляй нова категория.
+- Върни по един запис за всеки подаден id, в същия ред.`;
+
+const SCHEMA = {
+  type:'OBJECT',
+  properties:{
+    items:{
+      type:'ARRAY',
+      items:{
+        type:'OBJECT',
+        properties:{ id:{type:'INTEGER'}, kategoria:{type:'STRING'} },
+        required:['id','kategoria']
+      }
+    }
+  },
+  required:['items']
+};
+$('promptview').textContent = PROMPT;
+
+async function classify(batch){
+  const key = $('key').value.trim();
+  const model = $('model').value;
+  const payload = batch.map(t => ({
+    id: t.id, opisanie: t.desc, kontragent: t.counterparty, suma: t.amount
+  }));
+
+  const r = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`,
+    { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({
+        contents:[{ parts:[{ text: PROMPT + '\n\nТранзакции:\n' + JSON.stringify(payload, null, 1) }] }],
+        generationConfig:{ temperature:0, responseMimeType:'application/json', responseSchema:SCHEMA }
+      })
+    });
+
+  if(!r.ok){
+    let m = `HTTP ${r.status}`;
+    try{ const e = await r.json(); if(e.error?.message) m = e.error.message; }catch(_){}
+    throw new Error(m);
+  }
+  const j = await r.json();
+  const txt = j.candidates?.[0]?.content?.parts?.[0]?.text;
+  if(!txt) throw new Error('празен отговор');
+  const out = JSON.parse(txt);
+
+  const map = new Map();
+  (out.items || []).forEach(it => {
+    // моделът може да върне категория извън списъка — не ѝ вярваме
+    map.set(it.id, CATS.includes(it.kategoria) ? it.kategoria : 'Друго');
+  });
+  return map;
+}
+
+function short(m){
+  if(/API key not valid|API_KEY_INVALID/i.test(m)) return 'невалиден ключ';
+  if(/quota|RESOURCE_EXHAUSTED|429/i.test(m))      return 'изчерпан лимит';
+  if(/Failed to fetch|NetworkError/i.test(m))      return 'няма връзка';
+  if(/no longer available|not found|404/i.test(m)) return 'моделът е спрян — избери друг';
+  return m.length > 70 ? m.slice(0,70)+'…' : m;
+}
+
+/* ============================ МОДЕЛИ ============================ */
+const savedKey = ls.get('gemini_key');
+if(savedKey) $('key').value = savedKey;
+let kt = null;
+$('key').addEventListener('input', e => {
+  ls.set('gemini_key', e.target.value.trim());
+  refresh(); clearTimeout(kt); kt = setTimeout(loadModels, 600);
+});
+$('model').addEventListener('change', e => ls.set('gemini_model', e.target.value));
+
+async function loadModels(){
+  const key = $('key').value.trim(), sel = $('model');
+  if(key.length < 10){ sel.innerHTML = '<option value="">— сложи ключ —</option>'; refresh(); return; }
+  $('modelhint').textContent = 'Зареждам…';
+  try{
+    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}&pageSize=200`);
+    if(!r.ok) throw new Error(`HTTP ${r.status}`);
+    const j = await r.json();
+    const ms = (j.models||[])
+      .filter(m => (m.supportedGenerationMethods||[]).includes('generateContent'))
+      .map(m => m.name.replace(/^models\//,''))
+      .filter(n => /gemini/i.test(n) && !/embedding|aqa|image|tts|audio|live|native/i.test(n))
+      .sort();
+    if(!ms.length) throw new Error('няма подходящи модели');
+    sel.innerHTML = '';
+    ms.forEach(n => { const o = document.createElement('option'); o.value = o.textContent = n; sel.appendChild(o); });
+    const saved = ls.get('gemini_model');
+    const flash = ms.filter(n => /flash/.test(n) && !/lite|preview|exp/.test(n)).pop();
+    sel.value = ms.includes(saved) ? saved : (flash || ms[0]);
+    ls.set('gemini_model', sel.value);
+    $('modelhint').textContent = `${ms.length} налични модела.`;
+  }catch(err){
+    sel.innerHTML = '<option value="">— не се зареди —</option>';
+    $('modelhint').textContent = 'Не се зареди (' + short(err.message) + ').';
+  }
+  refresh();
+}
+if(savedKey) loadModels();
+
+/* ============================ СЪСТОЯНИЕ ============================ */
+let tx = [];        // транзакции
+let loaded = false; // има ли зареден файл
+let demoMode = false;
+let running = false;
+
+function refresh(){
+  $('run').disabled   = !loaded || running;
+  $('reset').disabled = !tx.length && !loaded;
+}
+
+/* ============================ КАЧВАНЕ ============================ */
+const drop = $('drop');
+drop.addEventListener('click', () => $('file').click());
+drop.addEventListener('keydown', e => { if(e.key==='Enter'||e.key===' '){ e.preventDefault(); $('file').click(); }});
+['dragenter','dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+['dragleave','drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if(f) readFile(f); });
+$('file').addEventListener('change', e => { if(e.target.files[0]) readFile(e.target.files[0]); e.target.value=''; });
+
+function readFile(f){
+  const r = new FileReader();
+  r.onload = () => { try{ ingest(r.result, f.name); }catch(err){ $('status').textContent = 'Грешка: ' + err.message; } };
+  r.onerror = () => { $('status').textContent = 'Файлът не се прочете.'; };
+  r.readAsText(f, 'utf-8');
+}
+
+function ingest(text, name){
+  const rows = parseCSV(text, sniffDelim(text));
+  tx = toTransactions(rows);
+  if(!tx.length) throw new Error('няма разпознати редове');
+  loaded = true; demoMode = false;
+  applyRules();
+  $('status').textContent = `${name}: ${tx.length} транзакции.`;
+  render(); refresh();
+}
+
+function applyRules(){
+  tx.forEach(t => {
+    const [c, s] = byRules(t);
+    t.cat = c; t.src = s;
+  });
+}
+
+/* ============================ ОБРАБОТКА ============================ */
+$('run').addEventListener('click', async () => {
+  applyRules();
+  const todo = tx.filter(t => !t.cat);
+
+  if(!todo.length){
+    $('status').textContent = 'Всичко се покри от правилата — AI не беше нужен.';
+    render(); return;
+  }
+  if(!$('key').value.trim() || !$('model').value){
+    $('status').textContent = `${todo.length} транзакции остават без категория. За тях трябва API ключ.`;
+    render(); return;
+  }
+
+  running = true; refresh();
+  const SIZE = 25;                      // групово, а не по една заявка на ред
+  let done = 0, failed = 0;
+  for(let i = 0; i < todo.length; i += SIZE){
+    const batch = todo.slice(i, i + SIZE);
+    $('status').textContent = `Питам AI за ${i+1}–${Math.min(i+SIZE, todo.length)} от ${todo.length}…`;
+    try{
+      const m = await classify(batch);
+      batch.forEach(t => { if(m.has(t.id)){ t.cat = m.get(t.id); t.src = 'AI'; done++; } });
+    }catch(err){
+      failed += batch.length;
+      $('status').textContent = 'Грешка: ' + short(err.message);
+      console.error(err);
+      break;
+    }
+    render();
+  }
+  running = false;
+  if(!failed) $('status').textContent =
+    `Готово. ${tx.length - todo.length} по правила, ${done} с AI.`;
+  render(); refresh();
+});
+
+$('demo').addEventListener('click', async () => {
+  const r = await fetch('primerno-izvlechenie.csv').catch(() => null);
+  if(r && r.ok){ ingest(await r.text(), 'primerno-izvlechenie.csv'); demoMode = true; render(); return; }
+  ingest(DEMO_CSV, 'примерно извлечение');
+  demoMode = true; render();
+});
+
+$('reset').addEventListener('click', () => {
+  tx = []; loaded = false; demoMode = false;
+  $('status').textContent = ''; $('results').hidden = true; refresh();
+});
+
+$('rules').addEventListener('click', () => {
+  const l = learned();
+  const n = Object.keys(l).length;
+  alert(n
+    ? `Научени правила (${n}):\n\n` + Object.entries(l).map(([k,v]) => `${k} → ${v}`).join('\n')
+    : 'Още няма научени правила. Смени категория на някой ред и тя се запомня.');
+});
+
+/* ============================ ИЗОБРАЗЯВАНЕ ============================ */
+const fmt = n => (n==null ? '' : n.toLocaleString('bg-BG',{minimumFractionDigits:2,maximumFractionDigits:2}));
+
+function render(){
+  if(!tx.length){ $('results').hidden = true; return; }
+  $('results').hidden = false;
+  $('banner').hidden = !demoMode;
+  if(demoMode) $('banner').innerHTML =
+    'Показано е <strong>примерно извлечение</strong> на измислена фирма. Никакви реални банкови данни.';
+
+  const income  = tx.filter(t => t.amount > 0).reduce((a,t) => a + t.amount, 0);
+  const expense = tx.filter(t => t.amount < 0).reduce((a,t) => a - t.amount, 0);
+  const net     = income - expense;
+  const unknown = tx.filter(t => !t.cat).length;
+  const byAI    = tx.filter(t => t.src === 'AI').length;
+
+  $('tiles').innerHTML = `
+    <div class="tile"><div class="k">Приходи</div><div class="v pos">${fmt(income)}</div></div>
+    <div class="tile"><div class="k">Разходи</div><div class="v neg">${fmt(expense)}</div></div>
+    <div class="tile"><div class="k">Нето</div><div class="v ${net>=0?'pos':'neg'}">${fmt(net)}</div></div>
+    <div class="tile"><div class="k">Транзакции</div><div class="v">${tx.length}</div></div>
+    <div class="tile"><div class="k">Разпознати с AI</div><div class="v">${byAI}</div></div>`;
+
+  // Проверка: сборът по категории трябва да е равен на общия разход.
+  const groups = {};
+  tx.filter(t => t.amount < 0).forEach(t => {
+    const k = t.cat || 'Без категория';
+    groups[k] = (groups[k] || 0) - t.amount;
+  });
+  const sumCats = Object.values(groups).reduce((a,b) => a+b, 0);
+  const diff = Math.abs(sumCats - expense);
+  $('balwarn').hidden = !(diff > 0.01 || unknown);
+  if(!$('balwarn').hidden){
+    const parts = [];
+    if(unknown) parts.push(`${unknown} транзакции остават без категория`);
+    if(diff > 0.01) parts.push(`разминаване в сбора: ${fmt(diff)}`);
+    $('balwarn').textContent = parts.join(' · ');
+  }
+
+  // --- графика: една мярка (разход) по категории → един цвят, подредени низходящо
+  const entries = Object.entries(groups).sort((a,b) => b[1]-a[1]);
+  const max = entries.length ? entries[0][1] : 1;
+  $('chart').innerHTML = entries.map(([k,v]) => {
+    const pct = expense ? (v/expense*100) : 0;
+    return `<div class="crow" title="${k}: ${fmt(v)} EUR (${pct.toFixed(1)}% от разходите)">
+      <div class="clabel">${k}</div>
+      <div class="ctrack"><div class="cfill" style="width:${Math.max(v/max*100, 0.6)}%"></div></div>
+      <div class="cval">${fmt(v)} <span class="cpct">${pct.toFixed(0)}%</span></div>
+    </div>`;
+  }).join('') || '<p class="empty">Няма разходи.</p>';
+
+  // --- таблица
+  $('rows').innerHTML = tx.map(t => {
+    const opts = ['<option value="">— без категория —</option>']
+      .concat(CATS.map(c => `<option value="${c}"${c===t.cat?' selected':''}>${c}</option>`)).join('');
+    return `<tr class="${t.cat?'':'unk'}">
+      <td>${t.date}</td>
+      <td>${t.desc || '—'}</td>
+      <td>${t.counterparty || '—'}</td>
+      <td class="num ${t.amount>0?'in':''}">${fmt(t.amount)}</td>
+      <td><select class="cat" data-id="${t.id}">${opts}</select>
+        ${t.src ? `<span class="src">${t.src}</span>` : ''}</td>
+    </tr>`;
+  }).join('');
+
+  $('rows').querySelectorAll('select.cat').forEach(s => {
+    s.addEventListener('change', e => {
+      const t = tx.find(x => x.id === +e.target.dataset.id);
+      t.cat = e.target.value || null;
+      t.src = t.cat ? 'ръчно' : null;
+      if(t.cat) learn(t.counterparty, t.cat);   // поправката става правило
+      render();
+    });
+  });
+
+  $('foot').innerHTML = `<tr>
+    <td colspan="3">Общо ${tx.length} транзакции</td>
+    <td class="num">${fmt(income - expense)}</td><td></td></tr>`;
+}
+
+/* ============================ ИЗНОС ============================ */
+$('csv').addEventListener('click', () => {
+  const esc = v => `"${String(v ?? '').replace(/"/g,'""')}"`;
+  const lines = [['Дата','Описание','Контрагент','Сума','Категория','Източник'].map(esc).join(';')];
+  tx.forEach(t => lines.push(
+    [t.date, t.desc, t.counterparty, t.amount, t.cat || '', t.src || ''].map(esc).join(';')));
+  const blob = new Blob(['﻿' + lines.join('\r\n')], {type:'text/csv;charset=utf-8;'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `izvlechenie-${new Date().toISOString().slice(0,10)}.csv`;
+  a.click(); URL.revokeObjectURL(a.href);
+});
+
+/* ============================ ТЕМА ============================ */
+$('theme').addEventListener('click', () => {
+  const cur = document.documentElement.getAttribute('data-theme');
+  const next = cur === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  ls.set('theme', next);
+});
+const savedTheme = ls.get('theme');
+if(savedTheme) document.documentElement.setAttribute('data-theme', savedTheme);
+
+/* Резерва, ако файлът се отвори локално и fetch не мине */
+const DEMO_CSV = `Дата;Описание;Контрагент;Дебит;Кредит
+01.09.2026;Наем търговски обект септември;ИМОТИ ЦЕНТЪР ЕООД;950,00;
+02.09.2026;Инкасо оборот каса 01.09;КАФЕ АРТЕФАКТ ЕООД;;1284,60
+02.09.2026;Плащане по фактура 4117;БИЛЯНА ФУУДС ООД;519,24;
+03.09.2026;Ел. енергия обект;ЧЕЗ ЕЛЕКТРО БЪЛГАРИЯ;186,40;
+05.09.2026;Гориво служебен автомобил;ЛУКОЙЛ БЪЛГАРИЯ ЕООД;78,30;
+10.09.2026;Работна заплата м. август;ПЕТРОВА;720,00;
+11.09.2026;Осигурителни вноски август;НАП;486,20;
+14.09.2026;Реклама във Фейсбук;META PLATFORMS IRELAND;120,00;
+18.09.2026;Счетоводно обслужване;АКАУНТ ПАРТНЪРС ЕООД;180,00;
+22.09.2026;Превод към НЕИЗВЕСТЕН ПОЛУЧАТЕЛ;;95,00;`;
+
+refresh();
+</script>
+</body>
+</html>
